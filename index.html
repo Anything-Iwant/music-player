@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>MP3 자동 재생 플레이어</title>
+  <title>MP3 자동 플레이어</title>
 
   <style>
     * {
@@ -14,7 +14,7 @@
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      background: linear-gradient(135deg, #151515, #343434);
+      background: linear-gradient(135deg, #141414, #333333);
       color: white;
       min-height: 100vh;
       display: flex;
@@ -27,11 +27,10 @@
       width: 100%;
       max-width: 560px;
       background: rgba(255, 255, 255, 0.1);
-      padding: 30px;
+      padding: 28px;
       border-radius: 24px;
       text-align: center;
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-      backdrop-filter: blur(10px);
     }
 
     h1 {
@@ -40,15 +39,17 @@
     }
 
     .desc {
-      color: #d5d5d5;
+      color: #dddddd;
       font-size: 15px;
-      margin-bottom: 22px;
+      line-height: 1.5;
+      margin-bottom: 18px;
     }
 
     .status {
-      margin: 12px 0;
       color: #ffd966;
       font-weight: bold;
+      margin: 12px 0;
+      line-height: 1.5;
     }
 
     .now-playing {
@@ -57,6 +58,7 @@
       color: #ffffff;
       font-size: 16px;
       font-weight: bold;
+      word-break: break-all;
     }
 
     audio {
@@ -89,7 +91,7 @@
     .song-list {
       margin-top: 24px;
       text-align: left;
-      max-height: 300px;
+      max-height: 310px;
       overflow-y: auto;
       border-top: 1px solid rgba(255, 255, 255, 0.2);
     }
@@ -113,9 +115,19 @@
     }
 
     .error {
-      color: #ff8a8a;
+      color: #ff9b9b;
+      margin-top: 14px;
+      line-height: 1.6;
+      font-size: 14px;
+      white-space: pre-line;
+    }
+
+    .small {
       margin-top: 12px;
+      font-size: 13px;
+      color: #cccccc;
       line-height: 1.5;
+      word-break: break-all;
     }
   </style>
 </head>
@@ -123,9 +135,12 @@
 <body>
   <div class="player-box">
     <h1>🎵 MP3 자동 플레이어</h1>
-    <p class="desc">GitHub music 폴더 안의 MP3 파일을 자동으로 불러와 순서대로 재생합니다.</p>
 
-    <p id="status" class="status">MP3 파일 목록을 불러오는 중입니다.</p>
+    <p class="desc">
+      GitHub Pages의 <b>music</b> 폴더 안 MP3 파일을 자동으로 불러와 순서대로 재생합니다.
+    </p>
+
+    <p id="status" class="status">MP3 파일을 찾는 중입니다.</p>
     <p id="nowPlaying" class="now-playing">아직 재생 중인 노래가 없습니다.</p>
 
     <audio id="player" controls></audio>
@@ -137,29 +152,40 @@
     </div>
 
     <div id="songList" class="song-list"></div>
+
+    <div id="debugInfo" class="small"></div>
     <div id="errorBox" class="error"></div>
   </div>
 
   <script>
     /*
-      아래 4개만 본인 GitHub 정보에 맞게 바꾸세요.
+      기본 폴더 이름입니다.
 
-      예시)
-      GitHub 주소가
-      https://github.com/kim123/music-player
+      현재 구조가 아래와 같으면 그대로 두세요.
 
-      라면 아래처럼 작성:
-      const GITHUB_ID = "kim123";
-      const REPO_NAME = "music-player";
+      index.html
+      music/
+        song-01.mp3
     */
-
-    const GITHUB_ID = "깃허브아이디";
-    const REPO_NAME = "저장소이름";
     const FOLDER_PATH = "music";
-    const BRANCH = "main";
 
-    const apiUrl =
-      `https://api.github.com/repos/${GITHUB_ID}/${REPO_NAME}/contents/${FOLDER_PATH}?ref=${BRANCH}`;
+    /*
+      보통 GitHub 기본 브랜치는 main입니다.
+      예전 저장소는 master일 수 있어서 둘 다 자동으로 확인합니다.
+    */
+    const BRANCH_CANDIDATES = ["main", "master"];
+
+    /*
+      자동 인식이 실패할 때만 아래에 직접 입력하세요.
+
+      예시:
+      const MANUAL_GITHUB_ID = "kim123";
+      const MANUAL_REPO_NAME = "music-player";
+
+      보통은 비워둬도 됩니다.
+    */
+    const MANUAL_GITHUB_ID = "";
+    const MANUAL_REPO_NAME = "";
 
     let songs = [];
     let currentIndex = 0;
@@ -169,54 +195,221 @@
     const nowPlaying = document.getElementById("nowPlaying");
     const songList = document.getElementById("songList");
     const errorBox = document.getElementById("errorBox");
+    const debugInfo = document.getElementById("debugInfo");
+
+    function getRepoInfoFromGitHubPagesUrl() {
+      const host = window.location.hostname;
+      const pathParts = window.location.pathname
+        .split("/")
+        .filter(Boolean);
+
+      if (!host.endsWith(".github.io")) {
+        return null;
+      }
+
+      const owner = host.replace(".github.io", "");
+
+      let repo = "";
+      let basePath = "/";
+
+      if (pathParts.length > 0) {
+        repo = pathParts[0];
+        basePath = "/" + repo + "/";
+      } else {
+        repo = owner + ".github.io";
+        basePath = "/";
+      }
+
+      return {
+        owner,
+        repo,
+        basePath
+      };
+    }
+
+    function getManualRepoInfo() {
+      if (!MANUAL_GITHUB_ID || !MANUAL_REPO_NAME) {
+        return null;
+      }
+
+      return {
+        owner: MANUAL_GITHUB_ID,
+        repo: MANUAL_REPO_NAME,
+        basePath: "/"
+      };
+    }
+
+    function makePageMusicUrl(basePath, fileName) {
+      return basePath + FOLDER_PATH + "/" + encodeURIComponent(fileName);
+    }
+
+    async function loadSongsFromGitHubApi(repoInfo) {
+      for (const branch of BRANCH_CANDIDATES) {
+        const apiUrl =
+          `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/${FOLDER_PATH}?ref=${branch}`;
+
+        try {
+          const response = await fetch(apiUrl);
+
+          if (!response.ok) {
+            continue;
+          }
+
+          const files = await response.json();
+
+          if (!Array.isArray(files)) {
+            continue;
+          }
+
+          const foundSongs = files
+            .filter(file => {
+              return file.type === "file" &&
+                file.name.toLowerCase().endsWith(".mp3");
+            })
+            .sort((a, b) => {
+              return a.name.localeCompare(b.name, "ko", {
+                numeric: true,
+                sensitivity: "base"
+              });
+            })
+            .map(file => {
+              return {
+                name: file.name,
+                url: makePageMusicUrl(repoInfo.basePath, file.name)
+              };
+            });
+
+          if (foundSongs.length > 0) {
+            return {
+              songs: foundSongs,
+              branch
+            };
+          }
+
+        } catch (error) {
+          console.log("GitHub API 확인 실패:", error);
+        }
+      }
+
+      return {
+        songs: [],
+        branch: null
+      };
+    }
+
+    async function checkFileExists(url) {
+      try {
+        const response = await fetch(url, {
+          method: "HEAD"
+        });
+
+        return response.ok;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    async function loadSongsByFallbackScan(basePath) {
+      const foundSongs = [];
+
+      /*
+        GitHub API가 실패했을 때를 대비한 예비 검색입니다.
+        song-01.mp3 ~ song-50.mp3까지 직접 확인합니다.
+      */
+      for (let i = 1; i <= 50; i++) {
+        const number = String(i).padStart(2, "0");
+        const fileName = `song-${number}.mp3`;
+        const url = makePageMusicUrl(basePath, fileName);
+
+        const exists = await checkFileExists(url);
+
+        if (exists) {
+          foundSongs.push({
+            name: fileName,
+            url
+          });
+        }
+      }
+
+      return foundSongs;
+    }
 
     async function loadSongs() {
-      try {
-        const response = await fetch(apiUrl);
+      errorBox.textContent = "";
+      songList.innerHTML = "";
 
-        if (!response.ok) {
-          throw new Error("GitHub 폴더 정보를 불러오지 못했습니다.");
-        }
+      let repoInfo =
+        getRepoInfoFromGitHubPagesUrl() ||
+        getManualRepoInfo();
 
-        const files = await response.json();
+      let detectedText = "";
 
-        if (!Array.isArray(files)) {
-          throw new Error("music 폴더를 찾지 못했거나 저장소 정보가 잘못되었습니다.");
-        }
+      if (repoInfo) {
+        detectedText =
+          `감지된 저장소: ${repoInfo.owner}/${repoInfo.repo}\n` +
+          `음악 폴더: ${FOLDER_PATH}`;
+      } else {
+        detectedText =
+          "GitHub Pages 주소가 아니라서 저장소를 자동 감지하지 못했습니다.\n" +
+          "GitHub Pages 주소에서 실행하거나, 코드 위쪽 MANUAL_GITHUB_ID / MANUAL_REPO_NAME을 입력하세요.";
+      }
 
-        songs = files
-          .filter(file => {
-            return file.type === "file" &&
-              file.name.toLowerCase().endsWith(".mp3");
-          })
-          .sort((a, b) => {
-            return a.name.localeCompare(b.name, "ko", {
-              numeric: true,
-              sensitivity: "base"
-            });
-          })
-          .map(file => {
-            return {
-              name: file.name,
-              url: file.download_url
-            };
-          });
+      debugInfo.textContent = detectedText;
 
-        if (songs.length === 0) {
-          statusText.textContent = "MP3 파일이 없습니다.";
-          errorBox.textContent = "music 폴더 안에 .mp3 파일을 올려주세요.";
+      if (repoInfo) {
+        statusText.textContent = "GitHub music 폴더에서 MP3 목록을 확인하는 중입니다.";
+
+        const apiResult = await loadSongsFromGitHubApi(repoInfo);
+
+        songs = apiResult.songs;
+
+        if (songs.length > 0) {
+          statusText.textContent =
+            `총 ${songs.length}개의 MP3 파일을 불러왔습니다. 사용 브랜치: ${apiResult.branch}`;
+
+          renderSongList();
           return;
         }
 
-        statusText.textContent = `총 ${songs.length}개의 MP3 파일을 불러왔습니다.`;
-        renderSongList();
+        statusText.textContent =
+          "GitHub API에서 MP3를 찾지 못했습니다. song-01.mp3 직접 확인 중입니다.";
 
-      } catch (error) {
-        console.error(error);
-        statusText.textContent = "불러오기 실패";
-        errorBox.textContent =
-          "GitHub 아이디, 저장소 이름, music 폴더 이름, branch 이름을 확인하세요.";
+        songs = await loadSongsByFallbackScan(repoInfo.basePath);
+
+        if (songs.length > 0) {
+          statusText.textContent =
+            `예비 검색으로 총 ${songs.length}개의 MP3 파일을 찾았습니다.`;
+
+          renderSongList();
+          return;
+        }
+      } else {
+        /*
+          로컬에서 index.html을 바로 열었을 때도 최소한 상대경로를 확인합니다.
+          단, file:// 로 열면 브라우저 보안 정책 때문에 확인이 실패할 수 있습니다.
+        */
+        songs = await loadSongsByFallbackScan("./");
+
+        if (songs.length > 0) {
+          statusText.textContent =
+            `예비 검색으로 총 ${songs.length}개의 MP3 파일을 찾았습니다.`;
+
+          renderSongList();
+          return;
+        }
       }
+
+      statusText.textContent = "재생할 MP3 파일이 없습니다.";
+
+      errorBox.textContent =
+        "확인해야 할 부분:\n" +
+        "1. GitHub Pages 주소에서 실행했는지 확인하세요.\n" +
+        "2. 폴더 이름이 정확히 music 인지 확인하세요.\n" +
+        "3. 파일 위치가 music/song-01.mp3 인지 확인하세요.\n" +
+        "4. 파일 확장자가 .mp3 인지 확인하세요.\n" +
+        "5. 저장소가 Public 공개 저장소인지 확인하세요.\n" +
+        "6. 브랜치가 main 또는 master 인지 확인하세요.\n" +
+        "7. 파일 이름 대소문자가 정확한지 확인하세요.";
     }
 
     function renderSongList() {
@@ -254,7 +447,7 @@
 
       player.play().catch(() => {
         nowPlaying.textContent =
-          "브라우저 정책 때문에 재생 버튼을 한 번 눌러야 할 수 있습니다.";
+          "브라우저 정책 때문에 아래 오디오 재생 버튼을 한 번 눌러야 할 수 있습니다.";
       });
     }
 
@@ -263,7 +456,10 @@
     }
 
     function playNext() {
-      if (songs.length === 0) return;
+      if (songs.length === 0) {
+        alert("재생할 MP3 파일이 없습니다.");
+        return;
+      }
 
       currentIndex++;
 
@@ -275,7 +471,10 @@
     }
 
     function playPrev() {
-      if (songs.length === 0) return;
+      if (songs.length === 0) {
+        alert("재생할 MP3 파일이 없습니다.");
+        return;
+      }
 
       currentIndex--;
 
