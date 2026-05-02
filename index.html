@@ -357,7 +357,7 @@
       debugInfo.textContent = detectedText;
 
       if (repoInfo) {
-        statusText.textContent = "GitHub music 폴더에서 MP3 목록을 확인하는 중입니다.";
+        statusText.textContent = "music 폴더에서 MP3 목록을 확인하는 중입니다.";
 
         const apiResult = await loadSongsFromGitHubApi(repoInfo);
 
@@ -365,7 +365,7 @@
 
         if (songs.length > 0) {
           statusText.textContent =
-            `총 ${songs.length}개의 MP3 파일을 불러왔습니다. 사용 브랜치: ${apiResult.branch}`;
+            `총 ${songs.length}개의 MP3 파일을 불러왔습니다. ${apiResult.branch}`;
 
           renderSongList();
           return;
