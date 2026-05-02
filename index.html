@@ -4,78 +4,301 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>MP3 음악 듣기</title>
+  <title>MP3 자동 재생 플레이어</title>
 
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      background: linear-gradient(135deg, #202020, #3a3a3a);
+      background: linear-gradient(135deg, #151515, #343434);
       color: white;
       min-height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
+      padding: 20px;
     }
 
     .player-box {
-      width: 90%;
-      max-width: 420px;
+      width: 100%;
+      max-width: 560px;
       background: rgba(255, 255, 255, 0.1);
       padding: 30px;
       border-radius: 24px;
       text-align: center;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
       backdrop-filter: blur(10px);
     }
 
     h1 {
-      font-size: 26px;
-      margin-bottom: 10px;
+      margin: 0 0 10px;
+      font-size: 28px;
     }
 
-    p {
-      color: #dddddd;
-      margin-bottom: 25px;
+    .desc {
+      color: #d5d5d5;
+      font-size: 15px;
+      margin-bottom: 22px;
+    }
+
+    .status {
+      margin: 12px 0;
+      color: #ffd966;
+      font-weight: bold;
+    }
+
+    .now-playing {
+      min-height: 24px;
+      margin: 14px 0;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: bold;
     }
 
     audio {
       width: 100%;
-      margin-top: 10px;
+      margin-top: 12px;
     }
 
-    .download-link {
-      display: inline-block;
-      margin-top: 20px;
-      padding: 12px 18px;
+    .button-area {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    button {
+      border: none;
       border-radius: 999px;
+      padding: 12px 18px;
+      cursor: pointer;
+      font-weight: bold;
       background: white;
       color: #222;
-      text-decoration: none;
-      font-weight: bold;
     }
 
-    .download-link:hover {
+    button:hover {
       background: #eeeeee;
+    }
+
+    .song-list {
+      margin-top: 24px;
+      text-align: left;
+      max-height: 300px;
+      overflow-y: auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .song-item {
+      padding: 12px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+      cursor: pointer;
+      color: #e8e8e8;
+      word-break: break-all;
+    }
+
+    .song-item:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .song-item.active {
+      color: #ffd966;
+      font-weight: bold;
+      background: rgba(255, 217, 102, 0.12);
+    }
+
+    .error {
+      color: #ff8a8a;
+      margin-top: 12px;
+      line-height: 1.5;
     }
   </style>
 </head>
 
 <body>
   <div class="player-box">
-    <h1>🎵 노래 듣기</h1>
-    <p>아래 재생 버튼을 누르면 음악이 나옵니다.</p>
+    <h1>🎵 MP3 자동 플레이어</h1>
+    <p class="desc">GitHub music 폴더 안의 MP3 파일을 자동으로 불러와 순서대로 재생합니다.</p>
 
-    <audio controls>
-      <source src="./music/my-song.mp3" type="audio/mpeg">
-      사용 중인 브라우저가 오디오 재생을 지원하지 않습니다.
-    </audio>
+    <p id="status" class="status">MP3 파일 목록을 불러오는 중입니다.</p>
+    <p id="nowPlaying" class="now-playing">아직 재생 중인 노래가 없습니다.</p>
 
-    <br />
+    <audio id="player" controls></audio>
 
-    <a class="download-link" href="./music/my-song.mp3" download>
-      MP3 다운로드
-    </a>
+    <div class="button-area">
+      <button onclick="startPlay()">처음부터 재생</button>
+      <button onclick="playPrev()">이전 곡</button>
+      <button onclick="playNext()">다음 곡</button>
+    </div>
+
+    <div id="songList" class="song-list"></div>
+    <div id="errorBox" class="error"></div>
   </div>
+
+  <script>
+    /*
+      아래 4개만 본인 GitHub 정보에 맞게 바꾸세요.
+
+      예시)
+      GitHub 주소가
+      https://github.com/kim123/music-player
+
+      라면 아래처럼 작성:
+      const GITHUB_ID = "kim123";
+      const REPO_NAME = "music-player";
+    */
+
+    const GITHUB_ID = "깃허브아이디";
+    const REPO_NAME = "저장소이름";
+    const FOLDER_PATH = "music";
+    const BRANCH = "main";
+
+    const apiUrl =
+      `https://api.github.com/repos/${GITHUB_ID}/${REPO_NAME}/contents/${FOLDER_PATH}?ref=${BRANCH}`;
+
+    let songs = [];
+    let currentIndex = 0;
+
+    const player = document.getElementById("player");
+    const statusText = document.getElementById("status");
+    const nowPlaying = document.getElementById("nowPlaying");
+    const songList = document.getElementById("songList");
+    const errorBox = document.getElementById("errorBox");
+
+    async function loadSongs() {
+      try {
+        const response = await fetch(apiUrl);
+
+        if (!response.ok) {
+          throw new Error("GitHub 폴더 정보를 불러오지 못했습니다.");
+        }
+
+        const files = await response.json();
+
+        if (!Array.isArray(files)) {
+          throw new Error("music 폴더를 찾지 못했거나 저장소 정보가 잘못되었습니다.");
+        }
+
+        songs = files
+          .filter(file => {
+            return file.type === "file" &&
+              file.name.toLowerCase().endsWith(".mp3");
+          })
+          .sort((a, b) => {
+            return a.name.localeCompare(b.name, "ko", {
+              numeric: true,
+              sensitivity: "base"
+            });
+          })
+          .map(file => {
+            return {
+              name: file.name,
+              url: file.download_url
+            };
+          });
+
+        if (songs.length === 0) {
+          statusText.textContent = "MP3 파일이 없습니다.";
+          errorBox.textContent = "music 폴더 안에 .mp3 파일을 올려주세요.";
+          return;
+        }
+
+        statusText.textContent = `총 ${songs.length}개의 MP3 파일을 불러왔습니다.`;
+        renderSongList();
+
+      } catch (error) {
+        console.error(error);
+        statusText.textContent = "불러오기 실패";
+        errorBox.textContent =
+          "GitHub 아이디, 저장소 이름, music 폴더 이름, branch 이름을 확인하세요.";
+      }
+    }
+
+    function renderSongList() {
+      songList.innerHTML = "";
+
+      songs.forEach((song, index) => {
+        const item = document.createElement("div");
+        item.className = "song-item";
+        item.textContent = `${index + 1}. ${song.name}`;
+
+        if (index === currentIndex) {
+          item.classList.add("active");
+        }
+
+        item.onclick = () => {
+          playSong(index);
+        };
+
+        songList.appendChild(item);
+      });
+    }
+
+    function playSong(index) {
+      if (songs.length === 0) {
+        alert("재생할 MP3 파일이 없습니다.");
+        return;
+      }
+
+      currentIndex = index;
+
+      player.src = songs[currentIndex].url;
+      nowPlaying.textContent = "현재 재생: " + songs[currentIndex].name;
+
+      renderSongList();
+
+      player.play().catch(() => {
+        nowPlaying.textContent =
+          "브라우저 정책 때문에 재생 버튼을 한 번 눌러야 할 수 있습니다.";
+      });
+    }
+
+    function startPlay() {
+      playSong(0);
+    }
+
+    function playNext() {
+      if (songs.length === 0) return;
+
+      currentIndex++;
+
+      if (currentIndex >= songs.length) {
+        currentIndex = 0;
+      }
+
+      playSong(currentIndex);
+    }
+
+    function playPrev() {
+      if (songs.length === 0) return;
+
+      currentIndex--;
+
+      if (currentIndex < 0) {
+        currentIndex = songs.length - 1;
+      }
+
+      playSong(currentIndex);
+    }
+
+    player.addEventListener("ended", () => {
+      currentIndex++;
+
+      if (currentIndex < songs.length) {
+        playSong(currentIndex);
+      } else {
+        nowPlaying.textContent = "전체 재생이 끝났습니다.";
+        currentIndex = 0;
+        renderSongList();
+      }
+    });
+
+    loadSongs();
+  </script>
 </body>
 </html>
